@@ -6,12 +6,15 @@
   "author": "Kami | Polkagate",
   "license": "MIT",
   "private": true,
-
   "scripts": {
-    "start": "tsc ./src/index.ts; node ./src/index.js"
+    "start": "yarn compile && yarn view",
+    "compile": "tsc ./src/index.ts",
+    "view": "node ./src/index.js"
   },
   "dependencies": {
+    "@polkadot/api": "^9.11.3",
     "@polkadot/networks": "^10.2.6",
+    "@polkadot/types": "^9.11.3",
     "@polkadot/ui-keyring": "^2.10.1",
     "@polkadot/util-crypto": "^10.2.6",
     "typescript": "^4.9.4"
