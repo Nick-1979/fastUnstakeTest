@@ -20,13 +20,18 @@ const KUSAMA_ENDPOINT = 'wss://kusama-rpc.dwellir.com: ';
 const PASSWORD = 'xyz123456';
 const MAIN_ACCOUNT_NAME = 'Parent'
 const NUMBER_OF_DERIVED_ACCOUNTS = 2;
-const TRANSFER_AMOUNT = 0.01; //wnd
-const accounts: { master: string | undefined, derived: string[] } = { master: undefined, derived: [] };
+const TRANSFER_AMOUNT = 1.5; //wnd
 
 const DEFAULT_TYPE: KeypairType = 'sr25519';
+interface Accounts {
+    master: string | undefined;
+    derived: string[];
+}
 
-async function createAccounts() {
+async function createAccounts(): Promise<Accounts> {
     return new Promise((resolve) => {
+        const accounts: Accounts = { master: undefined, derived: [] };
+
         cryptoWaitReady().then(() => {
             keyring.loadAll({ ss58Format: 42, type: DEFAULT_TYPE });
 
@@ -49,34 +54,62 @@ async function createAccounts() {
 
             // keyring.getAddresses().forEach(...)
 
-            resolve(true);
+            resolve(accounts);
         }).catch((err) => {
             console.error(err);
-            resolve(false);
+            resolve(null);
         });
     });
 }
 
-async function batchTransfer() {
-    const wsProvider = new WsProvider(WESTEND_ENDPOINT);
-    const signer = keyring.getPair(accounts.master);
-    signer.unlock(PASSWORD);
+async function batchTransfer(accounts: Accounts, api: ApiPromise): Promise<boolean> {
+    return new Promise((resolve) => {
+        const signer = keyring.getPair(accounts.master);
+        signer.unlock(PASSWORD);
 
-    const api = await ApiPromise.create({ provider: wsProvider });
-    const decimal = api.registry.chainDecimals[0];
-    const transfer = api.tx.balances.transferKeepAlive;
-    const batchAll = api.tx.utility.batchAll;
-    const amountToTransfer = TRANSFER_AMOUNT * 10 ** decimal;
-    const calls = accounts.derived.map((a) => transfer(a, amountToTransfer));
-    console.log(`Transferring ${amountToTransfer} from ${accounts.master} to ${accounts.derived.length} other derived accounts`);
+        const decimal = api.registry.chainDecimals[0];
+        const transfer = api.tx.balances.transferKeepAlive;
+        const batchAll = api.tx.utility.batchAll;
+        const amountToTransfer = TRANSFER_AMOUNT * 10 ** decimal;
+        const calls = accounts.derived.map((a) => transfer(a, amountToTransfer));
+        console.log(`Transferring ${amountToTransfer} from ${accounts.master} to ${accounts.derived.length} other derived accounts`);
 
-    const { success, txHash } = await signAndSend(api, batchAll(calls), signer, accounts.master);
-    console.log(`The batch transfer success:${success} with hash:${txHash}`);
+        signAndSend(api, batchAll(calls), signer, accounts.master).then(({ success, txHash }) => {
+            console.log(`The batch transfer success:${success} with hash:${txHash}`);
+            resolve(success);
+        });
+    });
+}
+
+async function batchStake(accounts: Accounts, api: ApiPromise): Promise<boolean> {
+    return new Promise((resolve) => {
+        const signer = keyring.getPair(accounts.master);
+        signer.unlock(PASSWORD);
+
+        const bond = api.tx.staking.bond;
+        const batchAll = api.tx.utility.batchAll;
+        api.query.staking.minNominatorBond().then((amount) => {
+            console.log(`ℹ Staking ${amount} for ${accounts.derived.length} accounts as a batch`);
+            const calls = accounts.derived.map((a) => bond(a, amount, 'Staked'));
+
+            signAndSend(api, batchAll(calls), signer, accounts.master).then(({ success, txHash }) => {
+                console.log(`🏁 Staking success:${success} with hash:${txHash}`);
+                resolve(success);
+            });
+        })
+    });
 }
 
 async function main() {
-    await createAccounts();
-    batchTransfer();
+    const wsProvider = new WsProvider(WESTEND_ENDPOINT);
+
+    console.log('⌛ waiting for api to be connected ...');
+    const api = await ApiPromise.create({ provider: wsProvider });
+    console.log('💹 api is connected ');
+
+    const accounts = await createAccounts();
+    // const success = await batchTransfer(accounts, api);
+    batchStake(accounts, api);
 }
 
 main();

@@ -54,13 +54,13 @@ var KUSAMA_ENDPOINT = 'wss://kusama-rpc.dwellir.com: ';
 var PASSWORD = 'xyz123456';
 var MAIN_ACCOUNT_NAME = 'Parent';
 var NUMBER_OF_DERIVED_ACCOUNTS = 2;
-var TRANSFER_AMOUNT = 0.01; //wnd
-var accounts = { master: undefined, derived: [] };
+var TRANSFER_AMOUNT = 1.5; //wnd
 var DEFAULT_TYPE = 'sr25519';
 function createAccounts() {
     return __awaiter(this, void 0, void 0, function () {
         return __generator(this, function (_a) {
             return [2 /*return*/, new Promise(function (resolve) {
+                    var accounts = { master: undefined, derived: [] };
                     (0, util_crypto_1.cryptoWaitReady)().then(function () {
                         ui_keyring_1["default"].loadAll({ ss58Format: 42, type: DEFAULT_TYPE });
                         // console.log( keyring.addUri(SEED, PASSWORD, { genesisHash: genesisHash.kusama, name }, DEFAULT_TYPE)    )
@@ -76,50 +76,76 @@ function createAccounts() {
                         }
                         console.log("Accounts:", accounts);
                         // keyring.getAddresses().forEach(...)
-                        resolve(true);
+                        resolve(accounts);
                     })["catch"](function (err) {
                         console.error(err);
-                        resolve(false);
+                        resolve(null);
                     });
                 })];
         });
     });
 }
-function batchTransfer() {
+function batchTransfer(accounts, api) {
     return __awaiter(this, void 0, void 0, function () {
-        var wsProvider, signer, api, decimal, transfer, batchAll, amountToTransfer, calls, _a, success, txHash;
-        return __generator(this, function (_b) {
-            switch (_b.label) {
-                case 0:
-                    wsProvider = new api_1.WsProvider(WESTEND_ENDPOINT);
-                    signer = ui_keyring_1["default"].getPair(accounts.master);
+        return __generator(this, function (_a) {
+            return [2 /*return*/, new Promise(function (resolve) {
+                    var signer = ui_keyring_1["default"].getPair(accounts.master);
                     signer.unlock(PASSWORD);
-                    return [4 /*yield*/, api_1.ApiPromise.create({ provider: wsProvider })];
-                case 1:
-                    api = _b.sent();
-                    decimal = api.registry.chainDecimals[0];
-                    transfer = api.tx.balances.transferKeepAlive;
-                    batchAll = api.tx.utility.batchAll;
-                    amountToTransfer = TRANSFER_AMOUNT * Math.pow(10, decimal);
-                    calls = accounts.derived.map(function (a) { return transfer(a, amountToTransfer); });
+                    var decimal = api.registry.chainDecimals[0];
+                    var transfer = api.tx.balances.transferKeepAlive;
+                    var batchAll = api.tx.utility.batchAll;
+                    var amountToTransfer = TRANSFER_AMOUNT * Math.pow(10, decimal);
+                    var calls = accounts.derived.map(function (a) { return transfer(a, amountToTransfer); });
                     console.log("Transferring ".concat(amountToTransfer, " from ").concat(accounts.master, " to ").concat(accounts.derived.length, " other derived accounts"));
-                    return [4 /*yield*/, (0, signAndSend_1.signAndSend)(api, batchAll(calls), signer, accounts.master)];
-                case 2:
-                    _a = _b.sent(), success = _a.success, txHash = _a.txHash;
-                    console.log("The batch transfer success:".concat(success, " with hash:").concat(txHash));
-                    return [2 /*return*/];
-            }
+                    (0, signAndSend_1.signAndSend)(api, batchAll(calls), signer, accounts.master).then(function (_a) {
+                        var success = _a.success, txHash = _a.txHash;
+                        console.log("The batch transfer success:".concat(success, " with hash:").concat(txHash));
+                        resolve(success);
+                    });
+                })];
+        });
+    });
+}
+function batchStake(accounts, api) {
+    return __awaiter(this, void 0, void 0, function () {
+        return __generator(this, function (_a) {
+            return [2 /*return*/, new Promise(function (resolve) {
+                    var signer = ui_keyring_1["default"].getPair(accounts.master);
+                    signer.unlock(PASSWORD);
+                    var bond = api.tx.staking.bond;
+                    var batchAll = api.tx.utility.batchAll;
+                    api.query.staking.minNominatorBond().then(function (amount) {
+                        console.log("\u2139 Staking ".concat(amount, " for ").concat(accounts.derived.length, " accounts as a batch"));
+                        var calls = accounts.derived.map(function (a) { return bond(a, amount, 'Staked'); });
+                        (0, signAndSend_1.signAndSend)(api, batchAll(calls), signer, accounts.master).then(function (_a) {
+                            var success = _a.success, txHash = _a.txHash;
+                            console.log("\uD83C\uDFC1 Staking success:".concat(success, " with hash:").concat(txHash));
+                            resolve(success);
+                        });
+                    });
+                })];
         });
     });
 }
 function main() {
     return __awaiter(this, void 0, void 0, function () {
+        var wsProvider, api, accounts, success;
         return __generator(this, function (_a) {
             switch (_a.label) {
-                case 0: return [4 /*yield*/, createAccounts()];
+                case 0:
+                    wsProvider = new api_1.WsProvider(WESTEND_ENDPOINT);
+                    console.log('⌛ waiting for api to be connected ...');
+                    return [4 /*yield*/, api_1.ApiPromise.create({ provider: wsProvider })];
                 case 1:
-                    _a.sent();
-                    batchTransfer();
+                    api = _a.sent();
+                    console.log('💹 api is connected ');
+                    return [4 /*yield*/, createAccounts()];
+                case 2:
+                    accounts = _a.sent();
+                    return [4 /*yield*/, batchTransfer(accounts, api)];
+                case 3:
+                    success = _a.sent();
+                    batchStake(accounts, api);
                     return [2 /*return*/];
             }
         });
