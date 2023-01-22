@@ -1,10 +1,9 @@
 import keyring from '@polkadot/ui-keyring';
 import { ApiPromise, WsProvider } from '@polkadot/api';
-import { AccountId } from '@polkadot/types/interfaces/runtime';
 
-import type { KeypairType } from '@polkadot/util-crypto/types';
 import { cryptoWaitReady } from '@polkadot/util-crypto';
-import { signAndSend } from './signAndSend';
+import { signAndSend } from './src/signAndSend.mjs';
+import { send } from './src/send.mjs';
 // import { selectableNetworks } from '@polkadot/networks';
 // const CHAIN = 'westend';
 // const genesisHash=selectableNetworks//.find((net)=>net.displayName===CHAIN)?.genesisHash;
@@ -14,23 +13,19 @@ const GENESIS_HASH = {
     kusama: '0xb0a8d493285c2df73290dfb7e61f870f17b41801197a149ca93654499ea3dafe'
 }
 const genesisHash = GENESIS_HASH.westend;
-const SEED = "sense across win orchard erosion anger mixture film gown machine parrot human";
+const SEED = "dose remind defy obvious chaos recall fish upset begin merit auto huge";
 const WESTEND_ENDPOINT = 'wss://westend-rpc.dwellir.com: ';
 const KUSAMA_ENDPOINT = 'wss://kusama-rpc.dwellir.com: ';
 const PASSWORD = 'xyz123456';
 const MAIN_ACCOUNT_NAME = 'Parent'
 const NUMBER_OF_DERIVED_ACCOUNTS = 2;
-const TRANSFER_AMOUNT = 1.5; //wnd
+const TRANSFER_AMOUNT = 1.2; //wnd
 
-const DEFAULT_TYPE: KeypairType = 'sr25519';
-interface Accounts {
-    master: string | undefined;
-    derived: string[];
-}
+const DEFAULT_TYPE = 'sr25519';
 
-async function createAccounts(): Promise<Accounts> {
+async function createAccounts() {
     return new Promise((resolve) => {
-        const accounts: Accounts = { master: undefined, derived: [] };
+        const accounts = { parent: undefined, derived: [] };
 
         cryptoWaitReady().then(() => {
             keyring.loadAll({ ss58Format: 42, type: DEFAULT_TYPE });
@@ -38,15 +33,19 @@ async function createAccounts(): Promise<Accounts> {
             // console.log( keyring.addUri(SEED, PASSWORD, { genesisHash: genesisHash.kusama, name }, DEFAULT_TYPE)    )
             const { pair, json } = keyring.addUri(SEED, PASSWORD, { name: MAIN_ACCOUNT_NAME });
 
-            accounts.master = json.address;
+            accounts.parent = json.address;
 
             //To Derive
-            const parentPair = keyring.getPair(accounts.master);
+            const parentPair = keyring.getPair(accounts.parent);
             parentPair.decodePkcs8(PASSWORD);
+
+            console.log(`🆕 Creating ${NUMBER_OF_DERIVED_ACCOUNTS + 1} accounts ...`);
 
             for (let i = 0; i < NUMBER_OF_DERIVED_ACCOUNTS; i++) {
                 let derivationPath = `//${i}`;
-                const derived = parentPair.derive(derivationPath, { genesisHash, name: MAIN_ACCOUNT_NAME, parentAddress: accounts.master, SEED });
+                const derived = parentPair.derive(derivationPath, { genesisHash, name: MAIN_ACCOUNT_NAME, parentAddress: accounts.parent, SEED });
+                keyring.addPair(derived, PASSWORD);
+
                 accounts.derived.push(derived.address)
             }
 
@@ -62,9 +61,9 @@ async function createAccounts(): Promise<Accounts> {
     });
 }
 
-async function batchTransfer(accounts: Accounts, api: ApiPromise): Promise<boolean> {
+async function batchTransfer(accounts, api) {
     return new Promise((resolve) => {
-        const signer = keyring.getPair(accounts.master);
+        const signer = keyring.getPair(accounts.parent);
         signer.unlock(PASSWORD);
 
         const decimal = api.registry.chainDecimals[0];
@@ -72,32 +71,41 @@ async function batchTransfer(accounts: Accounts, api: ApiPromise): Promise<boole
         const batchAll = api.tx.utility.batchAll;
         const amountToTransfer = TRANSFER_AMOUNT * 10 ** decimal;
         const calls = accounts.derived.map((a) => transfer(a, amountToTransfer));
-        console.log(`Transferring ${amountToTransfer} from ${accounts.master} to ${accounts.derived.length} other derived accounts`);
+        console.log(`↗ Transferring ${amountToTransfer} from ${accounts.parent} to ${accounts.derived.length} other derived accounts`);
 
-        signAndSend(api, batchAll(calls), signer, accounts.master).then(({ success, txHash }) => {
-            console.log(`The batch transfer success:${success} with hash:${txHash}`);
+        signAndSend(api, batchAll(calls), signer, accounts.parent).then(({ success, txHash }) => {
+            console.log(` 🆗 The batch transfer success:${success} with hash:${txHash}`);
             resolve(success);
         });
     });
 }
 
-async function batchStake(accounts: Accounts, api: ApiPromise): Promise<boolean> {
-    return new Promise((resolve) => {
-        const signer = keyring.getPair(accounts.master);
+async function batchStake(accounts, api) {
+    // const { hash } = await api.rpc.chain.getHeader();
+    const minNominatorBond = await api.query.staking.minNominatorBond();
+
+    // const options = { signer: new RawSigner() };
+    const options = {};
+    const bond = api.tx.staking.bond;
+    const batchAll = api.tx.utility.batchAll;
+
+    console.log(`ℹ Staking ${minNominatorBond} for ${accounts.derived.length} accounts as a batch`);
+
+    const signedCalls = await Promise.all(accounts.derived.map(async (a) => { //ُTODO: add parent too
+        const signer = keyring.getPair(a);
         signer.unlock(PASSWORD);
 
-        const bond = api.tx.staking.bond;
-        const batchAll = api.tx.utility.batchAll;
-        api.query.staking.minNominatorBond().then((amount) => {
-            console.log(`ℹ Staking ${amount} for ${accounts.derived.length} accounts as a batch`);
-            const calls = accounts.derived.map((a) => bond(a, amount, 'Staked'));
+        options.nonce = (await api.derive.balances.account(a)).accountNonce;
+        options.blockHash = api.genesisHash;
+        options.era = 0;
 
-            signAndSend(api, batchAll(calls), signer, accounts.master).then(({ success, txHash }) => {
-                console.log(`🏁 Staking success:${success} with hash:${txHash}`);
-                resolve(success);
-            });
-        })
-    });
+        return await bond(a, minNominatorBond, 'Staked').signAsync(signer, options);
+    }));
+
+    const results = await Promise.all(signedCalls.map((c) => send(api, c)));
+    // const { success, txHash } = await send(api, signedCalls[0]);
+
+    console.log('🏁 Staking results:',results);
 }
 
 async function main() {
@@ -105,10 +113,10 @@ async function main() {
 
     console.log('⌛ waiting for api to be connected ...');
     const api = await ApiPromise.create({ provider: wsProvider });
-    console.log('💹 api is connected ');
+    console.log('💹 api is connected.');
 
     const accounts = await createAccounts();
-    // const success = await batchTransfer(accounts, api);
+    const success = await batchTransfer(accounts, api);
     batchStake(accounts, api);
 }
 
