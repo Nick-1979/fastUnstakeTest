@@ -5,11 +5,10 @@
   "main": "index.ts",
   "author": "Kami | Polkagate",
   "license": "MIT",
+  "type": "module",
   "private": true,
   "scripts": {
-    "start": "yarn compile && yarn view",
-    "compile": "tsc ./src/index.ts",
-    "view": "node ./src/index.js"
+    "start": "node ./index.js"
   },
   "dependencies": {
     "@polkadot/api": "^9.11.3",

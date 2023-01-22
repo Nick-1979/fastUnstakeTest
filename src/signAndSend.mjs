@@ -1,27 +1,7 @@
 // Copyright 2019-2023 @polkadot/extension-polkagate authors & contributors
 // SPDX-License-Identifier: Apache-2.0
 
-import type { AccountId } from '@polkadot/types/interfaces';
-
-import { ApiPromise } from '@polkadot/api';
-import { SubmittableExtrinsic } from '@polkadot/api/types';
-import { KeyringPair } from '@polkadot/keyring/types';
-import { ISubmittableResult } from '@polkadot/types/types';
-
-export interface TxResult {
-  block: number;
-  txHash: string;
-  fee?: string;
-  success: boolean,
-  failureText?: string;
-}
-
-export async function signAndSend(
-  api: ApiPromise,
-  submittable: SubmittableExtrinsic<'promise', ISubmittableResult>,
-  _signer: KeyringPair,
-  senderAddress: string | AccountId
-): Promise<TxResult> {
+export async function signAndSend(api, submittable, _signer, senderAddress) {
   return new Promise((resolve) => {
     console.log('signing and sending a tx ...');
     // eslint-disable-next-line no-void
@@ -29,9 +9,7 @@ export async function signAndSend(
       let success = true;
       let failureText = '';
       const parsedRes = JSON.parse(JSON.stringify(result));
-      const event = new CustomEvent('transactionState', { detail: parsedRes.status });
 
-      window.dispatchEvent(event);
       console.log(parsedRes);
 
       if (result.dispatchError) {
@@ -80,3 +58,4 @@ export async function signAndSend(
     });
   });
 }
+
