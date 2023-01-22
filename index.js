@@ -3,6 +3,7 @@ import { ApiPromise, WsProvider } from '@polkadot/api';
 
 import { cryptoWaitReady } from '@polkadot/util-crypto';
 import { signAndSend } from './src/signAndSend.mjs';
+import { send } from './src/send.mjs';
 // import { selectableNetworks } from '@polkadot/networks';
 // const CHAIN = 'westend';
 // const genesisHash=selectableNetworks//.find((net)=>net.displayName===CHAIN)?.genesisHash;
@@ -12,13 +13,13 @@ const GENESIS_HASH = {
     kusama: '0xb0a8d493285c2df73290dfb7e61f870f17b41801197a149ca93654499ea3dafe'
 }
 const genesisHash = GENESIS_HASH.westend;
-const SEED = "sense across win orchard erosion anger mixture film gown machine parrot human";
+const SEED = "dose remind defy obvious chaos recall fish upset begin merit auto huge";
 const WESTEND_ENDPOINT = 'wss://westend-rpc.dwellir.com: ';
 const KUSAMA_ENDPOINT = 'wss://kusama-rpc.dwellir.com: ';
 const PASSWORD = 'xyz123456';
 const MAIN_ACCOUNT_NAME = 'Parent'
 const NUMBER_OF_DERIVED_ACCOUNTS = 2;
-const TRANSFER_AMOUNT = 0.01; //wnd
+const TRANSFER_AMOUNT = 1.2; //wnd
 
 const DEFAULT_TYPE = 'sr25519';
 
@@ -43,6 +44,8 @@ async function createAccounts() {
             for (let i = 0; i < NUMBER_OF_DERIVED_ACCOUNTS; i++) {
                 let derivationPath = `//${i}`;
                 const derived = parentPair.derive(derivationPath, { genesisHash, name: MAIN_ACCOUNT_NAME, parentAddress: accounts.parent, SEED });
+                keyring.addPair(derived, PASSWORD);
+
                 accounts.derived.push(derived.address)
             }
 
@@ -78,22 +81,31 @@ async function batchTransfer(accounts, api) {
 }
 
 async function batchStake(accounts, api) {
-    return new Promise((resolve) => {
-        const signer = keyring.getPair(accounts.parent);
+    // const { hash } = await api.rpc.chain.getHeader();
+    const minNominatorBond = await api.query.staking.minNominatorBond();
+
+    // const options = { signer: new RawSigner() };
+    const options = {};
+    const bond = api.tx.staking.bond;
+    const batchAll = api.tx.utility.batchAll;
+
+    console.log(`ℹ Staking ${minNominatorBond} for ${accounts.derived.length} accounts as a batch`);
+
+    const signedCalls = await Promise.all(accounts.derived.map(async (a) => { //ُTODO: add parent too
+        const signer = keyring.getPair(a);
         signer.unlock(PASSWORD);
 
-        const bond = api.tx.staking.bond;
-        const batchAll = api.tx.utility.batchAll;
-        api.query.staking.minNominatorBond().then((amount) => {
-            console.log(`ℹ Staking ${amount} for ${accounts.derived.length} accounts as a batch`);
-            const calls = [bond(accounts.parent, amount, 'Staked')].concat(accounts.derived.map((a) => bond(a, amount, 'Staked')));
+        options.nonce = (await api.derive.balances.account(a)).accountNonce;
+        options.blockHash = api.genesisHash;
+        options.era = 0;
 
-            signAndSend(api, batchAll(calls), signer, accounts.parent).then(({ success, txHash }) => {
-                console.log(`🏁 Staking success:${success} with hash:${txHash}`);
-                resolve(success);
-            });
-        })
-    });
+        return await bond(a, minNominatorBond, 'Staked').signAsync(signer, options);
+    }));
+
+    const results = await Promise.all(signedCalls.map((c) => send(api, c)));
+    // const { success, txHash } = await send(api, signedCalls[0]);
+
+    console.log('🏁 Staking results:',results);
 }
 
 async function main() {
@@ -105,7 +117,7 @@ async function main() {
 
     const accounts = await createAccounts();
     const success = await batchTransfer(accounts, api);
-    success && batchStake(accounts, api);
+    batchStake(accounts, api);
 }
 
 main();
