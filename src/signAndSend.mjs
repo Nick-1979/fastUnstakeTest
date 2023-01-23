@@ -8,9 +8,6 @@ export async function signAndSend(api, submittable, _signer, senderAddress) {
     void submittable.signAndSend(_signer, async (result) => {
       let success = true;
       let failureText = '';
-      const parsedRes = JSON.parse(JSON.stringify(result));
-
-      console.log(parsedRes);
 
       if (result.dispatchError) {
         if (result.dispatchError.isModule) {

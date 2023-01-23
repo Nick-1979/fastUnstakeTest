@@ -67,13 +67,12 @@ async function batchTransfer(accounts, api) {
         signer.unlock(PASSWORD);
 
         const decimal = api.registry.chainDecimals[0];
-        const transfer = api.tx.balances.transferKeepAlive;
-        const batchAll = api.tx.utility.batchAll;
         const amountToTransfer = TRANSFER_AMOUNT * 10 ** decimal;
-        const calls = accounts.derived.map((a) => transfer(a, amountToTransfer));
+
+        const calls = accounts.derived.map((a) => api.tx.balances.transferKeepAlive(a, amountToTransfer));
         console.log(`↗ Transferring ${amountToTransfer} from ${accounts.parent} to ${accounts.derived.length} other derived accounts`);
 
-        signAndSend(api, batchAll(calls), signer, accounts.parent).then(({ success, txHash }) => {
+        signAndSend(api, api.tx.utility.batchAll(calls), signer, accounts.parent).then(({ success, txHash }) => {
             console.log(` 🆗 The batch transfer success:${success} with hash:${txHash}`);
             resolve(success);
         });
@@ -81,15 +80,34 @@ async function batchTransfer(accounts, api) {
 }
 
 async function batchStake(accounts, api) {
-    // const { hash } = await api.rpc.chain.getHeader();
     const minNominatorBond = await api.query.staking.minNominatorBond();
 
-    // const options = { signer: new RawSigner() };
     const options = {};
-    const bond = api.tx.staking.bond;
-    const batchAll = api.tx.utility.batchAll;
 
-    console.log(`ℹ Staking ${minNominatorBond} for ${accounts.derived.length} accounts as a batch`);
+    console.log(`ℹ Staking ${minNominatorBond} for ${accounts.derived.length} accounts`);
+
+    const signedCalls = await Promise.all(accounts.parent.concat(accounts.derived).map(async (a) => {
+        const signer = keyring.getPair(a);
+        signer.unlock(PASSWORD);
+
+        options.nonce = (await api.derive.balances.account(a)).accountNonce;
+        options.blockHash = api.genesisHash;
+        options.era = 0;
+
+        return await api.tx.staking.bond(a, minNominatorBond, 'Staked').signAsync(signer, options);
+    }));
+
+    const results = await Promise.all(signedCalls.map((s) => send(api, s)));
+    const isAllStakingSuccessful = !results.find((r) => r.success === false);
+
+    console.log(`💰 Staking was ${isAllStakingSuccessful ? 'successful' : 'failed'}`);
+    return isAllStakingSuccessful;
+}
+
+async function batchRegisterFastUnstake(accounts, api) {
+    const options = {};
+
+    console.log(`🚀 Requesting * Fast * Unstake for ${accounts.derived.length} accounts`);
 
     const signedCalls = await Promise.all(accounts.derived.map(async (a) => { //ُTODO: add parent too
         const signer = keyring.getPair(a);
@@ -99,13 +117,14 @@ async function batchStake(accounts, api) {
         options.blockHash = api.genesisHash;
         options.era = 0;
 
-        return await bond(a, minNominatorBond, 'Staked').signAsync(signer, options);
+        return await api.tx.fastUnstake.registerFastUnstake().signAsync(signer, options);
     }));
 
-    const results = await Promise.all(signedCalls.map((c) => send(api, c)));
-    // const { success, txHash } = await send(api, signedCalls[0]);
-
-    console.log('🏁 Staking results:',results);
+    const results = await Promise.all(signedCalls.map((s) => send(api, s)));
+    const isAllRequestedSuccessfully = !results.find((r) => r.success === false);
+  
+    console.log(`🏁 fast unstaking results: ${isAllRequestedSuccessfully ? 'successful' : 'failed'}`);
+    return isAllRequestedSuccessfully;
 }
 
 async function main() {
@@ -116,8 +135,11 @@ async function main() {
     console.log('💹 api is connected.');
 
     const accounts = await createAccounts();
-    const success = await batchTransfer(accounts, api);
-    batchStake(accounts, api);
+    const isSuccessfulTransfer = await batchTransfer(accounts, api);
+    if (isSuccessfulTransfer) {
+        const isAllRequestedSuccessfully = batchStake(accounts, api);
+        batchRegisterFastUnstake(accounts, api);
+    }
 }
 
 main();
