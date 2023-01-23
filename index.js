@@ -30,7 +30,6 @@ async function createAccounts() {
         cryptoWaitReady().then(() => {
             keyring.loadAll({ ss58Format: 42, type: DEFAULT_TYPE });
 
-            // console.log( keyring.addUri(SEED, PASSWORD, { genesisHash: genesisHash.kusama, name }, DEFAULT_TYPE)    )
             const { pair, json } = keyring.addUri(SEED, PASSWORD, { name: MAIN_ACCOUNT_NAME });
 
             accounts.parent = json.address;
@@ -49,9 +48,7 @@ async function createAccounts() {
                 accounts.derived.push(derived.address)
             }
 
-            console.log(`Accounts:`, accounts)
-
-            // keyring.getAddresses().forEach(...)
+            console.log(`🧾 Accounts:`, accounts)
 
             resolve(accounts);
         }).catch((err) => {
@@ -73,7 +70,26 @@ async function batchTransfer(accounts, api) {
         console.log(`↗ Transferring ${amountToTransfer} from ${accounts.parent} to ${accounts.derived.length} other derived accounts`);
 
         signAndSend(api, api.tx.utility.batchAll(calls), signer, accounts.parent).then(({ success, txHash }) => {
-            console.log(` 🆗 The batch transfer success:${success} with hash:${txHash}`);
+            console.log(` 🆗 The batch transfer was :${success ? 'successful' : 'failed'} with hash:${txHash}`);
+
+            resolve(success);
+        });
+    });
+}
+
+async function batchTransferAllBack(accounts, api) {
+    return new Promise((resolve) => {
+        const signer = keyring.getPair(accounts.parent);
+        signer.unlock(PASSWORD);
+
+        const decimal = api.registry.chainDecimals[0];
+        const amountToTransfer = TRANSFER_AMOUNT * 10 ** decimal;
+
+        const calls = accounts.derived.map((a) => api.tx.balances.transferAll(accounts.parent, false));
+        console.log(`↗ Withdrawing all amounts from ${accounts.derived.length} derived accounts and transfer to ${accounts.parent}`);
+
+        signAndSend(api, api.tx.utility.batchAll(calls), signer, accounts.parent).then(({ success, txHash }) => {
+            console.log(` 🆗 The Withdraw was :${success ? 'successful' : 'failed'} with hash:${txHash}`);
             resolve(success);
         });
     });
@@ -82,11 +98,10 @@ async function batchTransfer(accounts, api) {
 async function batchStake(accounts, api) {
     const minNominatorBond = await api.query.staking.minNominatorBond();
 
-    const options = {};
-
     console.log(`ℹ Staking ${minNominatorBond} for ${accounts.derived.length} accounts`);
 
-    const signedCalls = await Promise.all(accounts.parent.concat(accounts.derived).map(async (a) => {
+    const options = {};
+    const signedCalls = await Promise.all([accounts.parent].concat(accounts.derived).map(async (a) => {
         const signer = keyring.getPair(a);
         signer.unlock(PASSWORD);
 
@@ -122,9 +137,14 @@ async function batchRegisterFastUnstake(accounts, api) {
 
     const results = await Promise.all(signedCalls.map((s) => send(api, s)));
     const isAllRequestedSuccessfully = !results.find((r) => r.success === false);
-  
+
     console.log(`🏁 fast unstaking results: ${isAllRequestedSuccessfully ? 'successful' : 'failed'}`);
     return isAllRequestedSuccessfully;
+}
+
+const TEST_MAP = {
+    TEST_FAST_UNSTAKE: 0,
+    WITHDRAW_ALL: 1
 }
 
 async function main() {
@@ -135,10 +155,19 @@ async function main() {
     console.log('💹 api is connected.');
 
     const accounts = await createAccounts();
-    const isSuccessfulTransfer = await batchTransfer(accounts, api);
-    if (isSuccessfulTransfer) {
-        const isAllRequestedSuccessfully = batchStake(accounts, api);
-        batchRegisterFastUnstake(accounts, api);
+
+    let testCase = TEST_MAP.WITHDRAW_ALL;
+
+    switch (testCase) {
+        case (TEST_MAP.TEST_FAST_UNSTAKE):
+            const isSuccessfulTransfer = await batchTransfer(accounts, api);
+            if (isSuccessfulTransfer) {
+                const isAllStakingSuccessful = batchStake(accounts, api);
+                isAllStakingSuccessful && batchRegisterFastUnstake(accounts, api);
+            }
+            break;
+        case (TEST_MAP.WITHDRAW_ALL):
+            batchTransferAllBack(accounts, api);
     }
 }
 
