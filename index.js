@@ -13,13 +13,14 @@ const GENESIS_HASH = {
     kusama: '0xb0a8d493285c2df73290dfb7e61f870f17b41801197a149ca93654499ea3dafe'
 }
 const genesisHash = GENESIS_HASH.westend;
-const SEED = "dose remind defy obvious chaos recall fish upset begin merit auto huge";
+const SEED = "install chat give key tail apart pottery spot ritual fire join leg";
 const WESTEND_ENDPOINT = 'wss://westend-rpc.dwellir.com: ';
 const KUSAMA_ENDPOINT = 'wss://kusama-rpc.dwellir.com: ';
 const PASSWORD = 'xyz123456';
 const MAIN_ACCOUNT_NAME = 'Parent'
-const NUMBER_OF_DERIVED_ACCOUNTS = 2;
-const TRANSFER_AMOUNT = 1.2; //wnd
+const NUMBER_OF_DERIVED_ACCOUNTS = 31;
+const TRANSFER_AMOUNT = 1.1; //wnd
+// const STAKE_AMOUNT = .0001; //wnd
 
 const DEFAULT_TYPE = 'sr25519';
 
@@ -70,7 +71,7 @@ async function batchTransfer(accounts, api) {
         console.log(`↗ Transferring ${amountToTransfer} from ${accounts.parent} to ${accounts.derived.length} other derived accounts`);
 
         signAndSend(api, api.tx.utility.batchAll(calls), signer, accounts.parent).then(({ success, txHash }) => {
-            console.log(` 🆗 The batch transfer was :${success ? 'successful' : 'failed'} with hash:${txHash}`);
+            console.log(`🆗 The batch transfer was :${success ? 'successful' : 'failed'} with hash:${txHash}`);
 
             resolve(success);
         });
@@ -78,27 +79,29 @@ async function batchTransfer(accounts, api) {
 }
 
 async function batchTransferAllBack(accounts, api) {
-    return new Promise((resolve) => {
-        const signer = keyring.getPair(accounts.parent);
+
+    const options = {};
+    const signedCalls = await Promise.all(accounts.derived.map(async (a) => {
+        const signer = keyring.getPair(a);
         signer.unlock(PASSWORD);
 
-        const decimal = api.registry.chainDecimals[0];
-        const amountToTransfer = TRANSFER_AMOUNT * 10 ** decimal;
+        options.nonce = (await api.derive.balances.account(a)).accountNonce;
+        options.blockHash = api.genesisHash;
+        options.era = 0;
 
-        const calls = accounts.derived.map((a) => api.tx.balances.transferAll(accounts.parent, false));
-        console.log(`↗ Withdrawing all amounts from ${accounts.derived.length} derived accounts and transfer to ${accounts.parent}`);
+        return await api.tx.balances.transferAll(accounts.parent, false).signAsync(signer, options);
+    }));
 
-        signAndSend(api, api.tx.utility.batchAll(calls), signer, accounts.parent).then(({ success, txHash }) => {
-            console.log(` 🆗 The Withdraw was :${success ? 'successful' : 'failed'} with hash:${txHash}`);
-            resolve(success);
-        });
-    });
+    console.log(`↗ Withdrawing all amounts from ${accounts.derived.length} derived accounts and transfer to ${accounts.parent}`);
+
+    const results = await Promise.all(signedCalls.map((s) => send(api, s)));
+    const isAllStakingSuccessful = !results.find((r) => r.success === false);
+    console.log(`🆗 The Withdraws were :${isAllStakingSuccessful ? 'successful' : 'failed'}`);
 }
 
 async function batchStake(accounts, api) {
-    const minNominatorBond = await api.query.staking.minNominatorBond();
-
-    console.log(`ℹ Staking ${minNominatorBond} for ${accounts.derived.length} accounts`);
+    const STAKE_AMOUNT = api.consts.balances.existentialDeposit;
+    console.log(`ℹ Staking ${STAKE_AMOUNT} for ${accounts.derived.length + 1} accounts`);
 
     const options = {};
     const signedCalls = await Promise.all([accounts.parent].concat(accounts.derived).map(async (a) => {
@@ -109,7 +112,7 @@ async function batchStake(accounts, api) {
         options.blockHash = api.genesisHash;
         options.era = 0;
 
-        return await api.tx.staking.bond(a, minNominatorBond, 'Staked').signAsync(signer, options);
+        return await api.tx.staking.bond(a, STAKE_AMOUNT, 'Staked').signAsync(signer, options);
     }));
 
     const results = await Promise.all(signedCalls.map((s) => send(api, s)));
@@ -122,9 +125,9 @@ async function batchStake(accounts, api) {
 async function batchRegisterFastUnstake(accounts, api) {
     const options = {};
 
-    console.log(`🚀 Requesting * Fast * Unstake for ${accounts.derived.length} accounts`);
+    console.log(`🚀 Requesting * Fast * Unstake for ${accounts.derived.length + 1} accounts`);
 
-    const signedCalls = await Promise.all(accounts.derived.map(async (a) => { //ُTODO: add parent too
+    const signedCalls = await Promise.all([accounts.parent].concat(accounts.derived).map(async (a) => {
         const signer = keyring.getPair(a);
         signer.unlock(PASSWORD);
 
@@ -142,19 +145,38 @@ async function batchRegisterFastUnstake(accounts, api) {
     return isAllRequestedSuccessfully;
 }
 
+async function batchTx(accounts, api, tx, params) {
+    const options = {};
+    const signedCalls = await Promise.all(accounts.derived.map(async (a) => {
+        const signer = keyring.getPair(a);
+        signer.unlock(PASSWORD);
+
+        options.nonce = (await api.derive.balances.account(a)).accountNonce;
+        options.blockHash = api.genesisHash;
+        options.era = 0;
+
+        return await tx(...params).signAsync(signer, options);
+    }));
+
+    console.log(`↗ Withdrawing all amounts from ${accounts.derived.length} derived accounts and transfer to ${accounts.parent}`);
+
+    const results = await Promise.all(signedCalls.map((s) => send(api, s)));
+    const isAllStakingSuccessful = !results.find((r) => r.success === false);
+    console.log(`🆗 The Withdraws were :${isAllStakingSuccessful ? 'successful' : 'failed'}`);
+}
+
 const TEST_MAP = {
     TEST_FAST_UNSTAKE: 0,
     WITHDRAW_ALL: 1
 }
 
 async function main() {
-    const wsProvider = new WsProvider(WESTEND_ENDPOINT);
+    const accounts = await createAccounts();
 
+    const wsProvider = new WsProvider(WESTEND_ENDPOINT);
     console.log('⌛ waiting for api to be connected ...');
     const api = await ApiPromise.create({ provider: wsProvider });
     console.log('💹 api is connected.');
-
-    const accounts = await createAccounts();
 
     let testCase = TEST_MAP.WITHDRAW_ALL;
 
@@ -162,7 +184,7 @@ async function main() {
         case (TEST_MAP.TEST_FAST_UNSTAKE):
             const isSuccessfulTransfer = await batchTransfer(accounts, api);
             if (isSuccessfulTransfer) {
-                const isAllStakingSuccessful = batchStake(accounts, api);
+                const isAllStakingSuccessful = await batchStake(accounts, api);
                 isAllStakingSuccessful && batchRegisterFastUnstake(accounts, api);
             }
             break;

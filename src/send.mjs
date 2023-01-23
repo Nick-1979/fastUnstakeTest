@@ -3,7 +3,6 @@
 
 export async function send(api, submittable) {
   return new Promise((resolve) => {
-    console.log('Sending a tx ...');
     // eslint-disable-next-line no-void
     void submittable.send(async (result) => {
       let success = true;

@@ -3,7 +3,6 @@
 
 export async function signAndSend(api, submittable, _signer, senderAddress) {
   return new Promise((resolve) => {
-    console.log('signing and sending a tx ...');
     // eslint-disable-next-line no-void
     void submittable.signAndSend(_signer, async (result) => {
       let success = true;
