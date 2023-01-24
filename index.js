@@ -18,7 +18,7 @@ const WESTEND_ENDPOINT = 'wss://westend-rpc.dwellir.com: ';
 const KUSAMA_ENDPOINT = 'wss://kusama-rpc.dwellir.com: ';
 const PASSWORD = 'xyz123456';
 const MAIN_ACCOUNT_NAME = 'Parent'
-const NUMBER_OF_DERIVED_ACCOUNTS = 31;
+const NUMBER_OF_DERIVED_ACCOUNTS = 63;
 const TRANSFER_AMOUNT = 1.1; //wnd
 // const STAKE_AMOUNT = .0001; //wnd
 
@@ -35,7 +35,7 @@ async function createAccounts() {
 
             accounts.parent = json.address;
 
-            //To Derive
+            // To Derive
             const parentPair = keyring.getPair(accounts.parent);
             parentPair.decodePkcs8(PASSWORD);
 
@@ -79,7 +79,6 @@ async function batchTransfer(accounts, api) {
 }
 
 async function batchTransferAllBack(accounts, api) {
-
     const options = {};
     const signedCalls = await Promise.all(accounts.derived.map(async (a) => {
         const signer = keyring.getPair(a);
@@ -123,10 +122,9 @@ async function batchStake(accounts, api) {
 }
 
 async function batchRegisterFastUnstake(accounts, api) {
-    const options = {};
-
     console.log(`🚀 Requesting * Fast * Unstake for ${accounts.derived.length + 1} accounts`);
 
+    const options = {};
     const signedCalls = await Promise.all([accounts.parent].concat(accounts.derived).map(async (a) => {
         const signer = keyring.getPair(a);
         signer.unlock(PASSWORD);
@@ -178,7 +176,7 @@ async function main() {
     const api = await ApiPromise.create({ provider: wsProvider });
     console.log('💹 api is connected.');
 
-    let testCase = TEST_MAP.WITHDRAW_ALL;
+    let testCase = TEST_MAP.TEST_FAST_UNSTAKE; // ** Needs to be set Manually ;) **
 
     switch (testCase) {
         case (TEST_MAP.TEST_FAST_UNSTAKE):
