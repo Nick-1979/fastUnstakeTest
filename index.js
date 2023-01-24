@@ -15,12 +15,13 @@ const GENESIS_HASH = {
 const genesisHash = GENESIS_HASH.westend;
 const SEED = "draw omit rotate bird illegal leg bulk pool poet print rail brother";
 const WESTEND_ENDPOINT =
-    //'wss://westend-rpc.dwellir.com: ';
-    'wss://westend-rpc-tn.dwellir.com';
+    'wss://westend-rpc.dwellir.com';
+    // 'wss://westend-rpc-tn.dwellir.com';
+
 const KUSAMA_ENDPOINT = 'wss://kusama-rpc.dwellir.com: ';
 const PASSWORD = 'xyz123456';
 const MAIN_ACCOUNT_NAME = 'Parent'
-const NUMBER_OF_DERIVED_ACCOUNTS = 63;
+const NUMBER_OF_DERIVED_ACCOUNTS = 66;
 const TRANSFER_AMOUNT = 1.1; //wnd
 
 const DEFAULT_TYPE = 'sr25519';
