@@ -13,14 +13,15 @@ const GENESIS_HASH = {
     kusama: '0xb0a8d493285c2df73290dfb7e61f870f17b41801197a149ca93654499ea3dafe'
 }
 const genesisHash = GENESIS_HASH.westend;
-const SEED = "install chat give key tail apart pottery spot ritual fire join leg";
-const WESTEND_ENDPOINT = 'wss://westend-rpc.dwellir.com: ';
+const SEED = "draw omit rotate bird illegal leg bulk pool poet print rail brother";
+const WESTEND_ENDPOINT =
+    //'wss://westend-rpc.dwellir.com: ';
+    'wss://westend-rpc-tn.dwellir.com';
 const KUSAMA_ENDPOINT = 'wss://kusama-rpc.dwellir.com: ';
 const PASSWORD = 'xyz123456';
 const MAIN_ACCOUNT_NAME = 'Parent'
 const NUMBER_OF_DERIVED_ACCOUNTS = 63;
 const TRANSFER_AMOUNT = 1.1; //wnd
-// const STAKE_AMOUNT = .0001; //wnd
 
 const DEFAULT_TYPE = 'sr25519';
 
