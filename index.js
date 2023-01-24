@@ -1,30 +1,37 @@
 import keyring from '@polkadot/ui-keyring';
 import { ApiPromise, WsProvider } from '@polkadot/api';
+import { cryptoWaitReady, decodeAddress, encodeAddress } from '@polkadot/util-crypto';
 
-import { cryptoWaitReady } from '@polkadot/util-crypto';
 import { signAndSend } from './src/signAndSend.mjs';
 import { send } from './src/send.mjs';
-// import { selectableNetworks } from '@polkadot/networks';
-// const CHAIN = 'westend';
-// const genesisHash=selectableNetworks//.find((net)=>net.displayName===CHAIN)?.genesisHash;
+
+/** settings that should be set before run */
+const NUMBER_OF_DERIVED_ACCOUNTS = 64;
+const TRANSFER_AMOUNT = 0.04; // > 3*fee+ED+fastUnstakeDeposit  TOKEN
+const TEST_CHAIN = 'kusama';
+/**************************/
 
 const GENESIS_HASH = {
     westend: '0xe143f23803ac50e8f6f8e62695d1ce9e4e1d68aa36c1cd2cfd15340213f3423e',
     kusama: '0xb0a8d493285c2df73290dfb7e61f870f17b41801197a149ca93654499ea3dafe'
 }
-const genesisHash = GENESIS_HASH.westend;
-const SEED = "draw omit rotate bird illegal leg bulk pool poet print rail brother";
-const WESTEND_ENDPOINT =
-    'wss://westend-rpc.dwellir.com';
-    // 'wss://westend-rpc-tn.dwellir.com';
 
-const KUSAMA_ENDPOINT = 'wss://kusama-rpc.dwellir.com: ';
+const SS58_FORMAT = {
+    kusama: 2,
+    westend: 42
+};
+const ENDPOINT = {
+    westend: 'wss://westend-rpc.dwellir.com',
+    kusama: 'wss://kusama-rpc.dwellir.com: '
+}
+
+const SEED = "draw omit rotate bird illegal leg bulk pool poet print rail brother";
 const PASSWORD = 'xyz123456';
 const MAIN_ACCOUNT_NAME = 'Parent'
-const NUMBER_OF_DERIVED_ACCOUNTS = 66;
-const TRANSFER_AMOUNT = 1.1; //wnd
-
 const DEFAULT_TYPE = 'sr25519';
+const genesisHash = GENESIS_HASH[TEST_CHAIN];
+const prefix = SS58_FORMAT[TEST_CHAIN];
+const endpoint = ENDPOINT[TEST_CHAIN];
 
 async function createAccounts() {
     return new Promise((resolve) => {
@@ -48,8 +55,9 @@ async function createAccounts() {
                 const derived = parentPair.derive(derivationPath, { genesisHash, name: MAIN_ACCOUNT_NAME, parentAddress: accounts.parent, SEED });
                 keyring.addPair(derived, PASSWORD);
 
-                accounts.derived.push(derived.address)
+                accounts.derived.push(encodeAddress(decodeAddress(derived.address), prefix))
             }
+            accounts.parent = encodeAddress(decodeAddress(accounts.parent), prefix);
 
             console.log(`🧾 Accounts:`, accounts)
 
@@ -173,24 +181,24 @@ const TEST_MAP = {
 async function main() {
     const accounts = await createAccounts();
 
-    const wsProvider = new WsProvider(WESTEND_ENDPOINT);
+    const wsProvider = new WsProvider(endpoint);
     console.log('⌛ waiting for api to be connected ...');
     const api = await ApiPromise.create({ provider: wsProvider });
-    console.log('💹 api is connected.');
+    console.log(`💹 api is connected, genesisHash: ${api.genesisHash}`);
 
     let testCase = TEST_MAP.TEST_FAST_UNSTAKE; // ** Needs to be set Manually ;) **
 
-    switch (testCase) {
-        case (TEST_MAP.TEST_FAST_UNSTAKE):
-            const isSuccessfulTransfer = await batchTransfer(accounts, api);
-            if (isSuccessfulTransfer) {
-                const isAllStakingSuccessful = await batchStake(accounts, api);
-                isAllStakingSuccessful && batchRegisterFastUnstake(accounts, api);
-            }
-            break;
-        case (TEST_MAP.WITHDRAW_ALL):
-            batchTransferAllBack(accounts, api);
-    }
+    // switch (testCase) {
+    //     case (TEST_MAP.TEST_FAST_UNSTAKE):
+    //         const isSuccessfulTransfer = await batchTransfer(accounts, api);
+    //         if (isSuccessfulTransfer) {
+    //             const isAllStakingSuccessful = await batchStake(accounts, api);
+    //             isAllStakingSuccessful && batchRegisterFastUnstake(accounts, api);
+    //         }
+    //         break;
+    //     case (TEST_MAP.WITHDRAW_ALL):
+    //         batchTransferAllBack(accounts, api);
+    // }
 }
 
 main();
